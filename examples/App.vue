@@ -1,287 +1,140 @@
 <template>
   <div id="app">
-    <vue-el-cascader v-model="value" :options="options" filterable>
+    <vue-el-cascader
+      v-model="value"
+      :props="props"
+      filterable
+      customSuggestion
+      collapse-tags
+      :show-all-levels="false"
+      @menu-scroll-bottom="handleScrollBottom"
+      @suggestion-scroll-bottom="handleSuggestionScrollBottom"
+    >
+      <template v-slot:search="{ node, inputValue }">
+        <highlight :inputValue="inputValue" :text="node.text"></highlight>
+      </template>
     </vue-el-cascader>
   </div>
 </template>
 
 <script>
+import highlight from "../packages/cascader/src/highlight.vue";
+import { getData, searchData, rootData } from "./data";
+
 export default {
+  components: { highlight },
+
   name: "App",
   data() {
     return {
       // Your data properties go here
-      value: [],
-      options: [
-        {
-          value: "zhinan",
-          label: "指南",
-          children: [
-            {
-              value: "shejiyuanze",
-              label: "设计原则",
-              children: [
-                {
-                  value: "yizhi",
-                  label: "已知",
-                },
-                {
-                  value: "fankui",
-                  label: "反馈",
-                },
-                {
-                  value: "xiaolv",
-                  label: "效率",
-                },
-                {
-                  value: "kekong",
-                  label: "可控",
-                },
-              ],
-            },
-            {
-              value: "daohang",
-              label: "导航",
-              children: [
-                {
-                  value: "cexiangdaohang",
-                  label: "侧向导航",
-                },
-                {
-                  value: "dingbudaohang",
-                  label: "顶部导航",
-                },
-              ],
-            },
-          ],
+      value: ["1-1", "2-16"],
+      props: {
+        lazy: true,
+        multiple: true,
+        emitPath: false,
+        lazyLoad(node, resolve) {
+          const { level, root, isLeaf, data: nodeData } = node;
+          if (isLeaf) return resolve([]);
+          setTimeout(() => {
+            // 加载根节点
+            if (root) {
+              console.log("lazyload root");
+              resolve(rootData);
+            } else {
+              // 加载叶子节点
+              console.log("lazyload", level);
+              const { value: parentId } = nodeData;
+              nodeData.currentPage = 1;
+              nodeData.isEnd = false;
+              const { data: children, total } = getData(
+                parentId,
+                nodeData.currentPage,
+                10
+              );
+              if (node.children.length + children.length < total) {
+                nodeData.isEnd = false;
+              } else {
+                nodeData.isEnd = true;
+              }
+              resolve(children);
+            }
+          }, 200);
         },
-        {
-          value: "zujian",
-          label: "组件",
-          children: [
-            {
-              value: "basic",
-              label: "Basic",
-              children: [
-                {
-                  value: "layout",
-                  label: "Layout 布局",
-                },
-                {
-                  value: "color",
-                  label: "Color 色彩",
-                },
-                {
-                  value: "typography",
-                  label: "Typography 字体",
-                },
-                {
-                  value: "icon",
-                  label: "Icon 图标",
-                },
-                {
-                  value: "button",
-                  label: "Button 按钮",
-                },
-              ],
-            },
-            {
-              value: "form",
-              label: "Form",
-              children: [
-                {
-                  value: "radio",
-                  label: "Radio 单选框",
-                },
-                {
-                  value: "checkbox",
-                  label: "Checkbox 多选框",
-                },
-                {
-                  value: "input",
-                  label: "Input 输入框",
-                },
-                {
-                  value: "input-number",
-                  label: "InputNumber 计数器",
-                },
-                {
-                  value: "select",
-                  label: "Select 选择器",
-                },
-                {
-                  value: "cascader",
-                  label: "Cascader 级联选择器",
-                },
-                {
-                  value: "switch",
-                  label: "Switch 开关",
-                },
-                {
-                  value: "slider",
-                  label: "Slider 滑块",
-                },
-                {
-                  value: "time-picker",
-                  label: "TimePicker 时间选择器",
-                },
-                {
-                  value: "date-picker",
-                  label: "DatePicker 日期选择器",
-                },
-                {
-                  value: "datetime-picker",
-                  label: "DateTimePicker 日期时间选择器",
-                },
-                {
-                  value: "upload",
-                  label: "Upload 上传",
-                },
-                {
-                  value: "rate",
-                  label: "Rate 评分",
-                },
-                {
-                  value: "form",
-                  label: "Form 表单",
-                },
-              ],
-            },
-            {
-              value: "data",
-              label: "Data",
-              children: [
-                {
-                  value: "table",
-                  label: "Table 表格",
-                },
-                {
-                  value: "tag",
-                  label: "Tag 标签",
-                },
-                {
-                  value: "progress",
-                  label: "Progress 进度条",
-                },
-                {
-                  value: "tree",
-                  label: "Tree 树形控件",
-                },
-                {
-                  value: "pagination",
-                  label: "Pagination 分页",
-                },
-                {
-                  value: "badge",
-                  label: "Badge 标记",
-                },
-              ],
-            },
-            {
-              value: "notice",
-              label: "Notice",
-              children: [
-                {
-                  value: "alert",
-                  label: "Alert 警告",
-                },
-                {
-                  value: "loading",
-                  label: "Loading 加载",
-                },
-                {
-                  value: "message",
-                  label: "Message 消息提示",
-                },
-                {
-                  value: "message-box",
-                  label: "MessageBox 弹框",
-                },
-                {
-                  value: "notification",
-                  label: "Notification 通知",
-                },
-              ],
-            },
-            {
-              value: "navigation",
-              label: "Navigation",
-              children: [
-                {
-                  value: "menu",
-                  label: "NavMenu 导航菜单",
-                },
-                {
-                  value: "tabs",
-                  label: "Tabs 标签页",
-                },
-                {
-                  value: "breadcrumb",
-                  label: "Breadcrumb 面包屑",
-                },
-                {
-                  value: "dropdown",
-                  label: "Dropdown 下拉菜单",
-                },
-                {
-                  value: "steps",
-                  label: "Steps 步骤条",
-                },
-              ],
-            },
-            {
-              value: "others",
-              label: "Others",
-              children: [
-                {
-                  value: "dialog",
-                  label: "Dialog 对话框",
-                },
-                {
-                  value: "tooltip",
-                  label: "Tooltip 文字提示",
-                },
-                {
-                  value: "popover",
-                  label: "Popover 弹出框",
-                },
-                {
-                  value: "card",
-                  label: "Card 卡片",
-                },
-                {
-                  value: "carousel",
-                  label: "Carousel 走马灯",
-                },
-                {
-                  value: "collapse",
-                  label: "Collapse 折叠面板",
-                },
-              ],
-            },
-          ],
-        },
-        {
-          value: "ziyuan",
-          label: "资源",
-          children: [
-            {
-              value: "axure",
-              label: "Axure Components",
-            },
-            {
-              value: "sketch",
-              label: "Sketch Templates",
-            },
-            {
-              value: "jiaohu",
-              label: "组件交互文档",
-            },
-          ],
-        },
-      ],
+        remoteMethod: this.remoteMethod,
+      },
+      searchCurrentPage: 0,
+      // 维护一个根节点对象
+      rootNodeData: {
+        label: "",
+        value: "",
+        total: 300, //可更改
+        children: [],
+      },
     };
   },
-  methods: {},
+  methods: {
+    remoteMethod(query, resolve) {
+      console.log("query", query);
+      if (query !== "") {
+        this.searchCurrentPage = 1;
+        // this.loading = true;
+        setTimeout(() => {
+          // this.loading = false;
+          const res = searchData(query, this.searchCurrentPage, 10);
+          resolve(res.data);
+        }, 2000);
+      }
+    },
+    handleScrollBottom(parentNode, resolve) {
+      if (parentNode) {
+        const { data: nodeData } = parentNode;
+        const { isEnd, value, total } = nodeData;
+        // if (isEnd) return
+        nodeData.currentPage = nodeData.currentPage || 0;
+        nodeData.currentPage++;
+        setTimeout(() => {
+          const { data: children, total } = getData(
+            value,
+            parentNode.data.currentPage,
+            5
+          );
+          nodeData.total = total;
+          if (parentNode.children.length + children.length < total) {
+            nodeData.isEnd = false;
+          } else {
+            nodeData.isEnd = true;
+          }
+          resolve(children);
+        }, 200);
+      } else {
+        this.rootNodeData.currentPage = this.rootNodeData.currentPage || 0;
+        this.rootNodeData.currentPage++;
+        setTimeout(() => {
+          const { data: children, total } = getData(
+            0,
+            this.rootNodeData.currentPage,
+            10
+          );
+          this.rootNodeData.total = total;
+          if (this.rootNodeData.children.length + children.length < total) {
+            this.rootNodeData.isEnd = false;
+          } else {
+            this.rootNodeData.isEnd = true;
+          }
+          resolve(children);
+        }, 200);
+      }
+    },
+    handleSuggestionScrollBottom(query, resolve) {
+      if (query !== "") {
+        this.searchCurrentPage++;
+        setTimeout(() => {
+          const { data, total } = searchData(query, this.searchCurrentPage, 10);
+          resolve(data);
+        }, 1000);
+      }
+    },
+  },
 };
 </script>

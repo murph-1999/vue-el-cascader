@@ -9,6 +9,10 @@
       :index="index"
       :key="index"
       :nodes="menu"
+      @menu-scroll-bottom="
+        (parentNode, resolve) =>
+          $emit('menu-scroll-bottom', parentNode, resolve)
+      "
     ></cascader-menu>
   </div>
 </template>
@@ -40,6 +44,7 @@ const DefaultProps = {
   children: "children",
   leaf: "leaf",
   disabled: "disabled",
+  total: "total", //add by Murphy, the key name of the total number of node.children
   hoverThreshold: 500,
 };
 
@@ -192,6 +197,7 @@ export default {
     syncMultiCheckState() {
       const nodes = this.getFlattedNodes(this.leafOnly);
 
+      console.log("nodes", nodes);
       nodes.forEach((node) => {
         node.syncCheckState(this.checkedValue);
       });
@@ -313,6 +319,12 @@ export default {
       const resolve = (dataList) => {
         const parent = node.root ? null : node;
         dataList && dataList.length && this.store.appendNodes(dataList, parent);
+
+        // add bu Murphy，初始展示懒加载的节点时，设置对应v-model 节点value值的节点状态
+        this.syncMultiCheckState();
+        // add bu Murphy，对应修改输入框展示文本
+        this.$parent.computePresentContent();
+
         node.loading = false;
         node.loaded = true;
 

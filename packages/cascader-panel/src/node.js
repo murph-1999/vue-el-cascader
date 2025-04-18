@@ -1,5 +1,10 @@
-import { isEqual, capitalize } from 'element-ui/src/utils/util';
-import { isDef } from 'element-ui/src/utils/shared';
+import {
+  isEqual,
+  capitalize
+} from 'element-ui/src/utils/util';
+import {
+  isDef
+} from 'element-ui/src/utils/shared';
 
 let uid = 0;
 
@@ -17,10 +22,15 @@ export default class Node {
   }
 
   initState() {
-    const { value: valueKey, label: labelKey } = this.config;
+    const {
+      value: valueKey,
+      label: labelKey,
+      total: totalKey
+    } = this.config;
 
     this.value = this.data[valueKey];
     this.label = this.data[labelKey];
+    this.total = this.data[totalKey];
     this.pathNodes = this.calculatePathNodes();
     this.path = this.pathNodes.map(node => node.value);
     this.pathLabels = this.pathNodes.map(node => node.label);
@@ -31,7 +41,9 @@ export default class Node {
   }
 
   initChildren() {
-    const { config } = this;
+    const {
+      config
+    } = this;
     const childrenKey = config.children;
     const childrenData = this.data[childrenKey];
     this.hasChildren = Array.isArray(childrenData);
@@ -39,20 +51,34 @@ export default class Node {
   }
 
   get isDisabled() {
-    const { data, parent, config } = this;
+    const {
+      data,
+      parent,
+      config
+    } = this;
     const disabledKey = config.disabled;
-    const { checkStrictly } = config;
+    const {
+      checkStrictly
+    } = config;
     return data[disabledKey] ||
       !checkStrictly && parent && parent.isDisabled;
   }
 
   get isLeaf() {
-    const { data, loaded, hasChildren, children } = this;
-    const { lazy, leaf: leafKey } = this.config;
+    const {
+      data,
+      loaded,
+      hasChildren,
+      children
+    } = this;
+    const {
+      lazy,
+      leaf: leafKey
+    } = this.config;
     if (lazy) {
-      const isLeaf = isDef(data[leafKey])
-        ? data[leafKey]
-        : (loaded ? !children.length : false);
+      const isLeaf = isDef(data[leafKey]) ?
+        data[leafKey] :
+        (loaded ? !children.length : false);
       this.hasChildren = !isLeaf;
       return isLeaf;
     }
@@ -80,9 +106,9 @@ export default class Node {
   }
 
   getValueByOption() {
-    return this.config.emitPath
-      ? this.getPath()
-      : this.getValue();
+    return this.config.emitPath ?
+      this.getPath() :
+      this.getValue();
   }
 
   getText(allLevels, separator) {
@@ -91,9 +117,9 @@ export default class Node {
 
   isSameNode(checkedValue) {
     const value = this.getValueByOption();
-    return this.config.multiple && Array.isArray(checkedValue)
-      ? checkedValue.some(val => isEqual(val, value))
-      : isEqual(checkedValue, value);
+    return this.config.multiple && Array.isArray(checkedValue) ?
+      checkedValue.some(val => isEqual(val, value)) :
+      isEqual(checkedValue, value);
   }
 
   broadcast(event, ...args) {
@@ -109,7 +135,9 @@ export default class Node {
   }
 
   emit(event, ...args) {
-    const { parent } = this;
+    const {
+      parent
+    } = this;
     const handlerName = `onChild${capitalize(event)}`;
     if (parent) {
       parent[handlerName] && parent[handlerName](...args);
@@ -124,11 +152,15 @@ export default class Node {
   }
 
   onChildCheck() {
-    const { children } = this;
+    const {
+      children
+    } = this;
+
     const validChildren = children.filter(child => !child.isDisabled);
-    const checked = validChildren.length
-      ? validChildren.every(child => child.checked)
-      : false;
+
+    const checked = validChildren.length ?
+      validChildren.every(child => child.checked) :
+      false;
 
     this.setCheckState(checked);
   }
