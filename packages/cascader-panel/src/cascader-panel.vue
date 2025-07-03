@@ -23,6 +23,7 @@ import Store from "./store";
 import merge from "element-ui/src/utils/merge";
 import AriaUtils from "element-ui/src/utils/aria-utils";
 import scrollIntoView from "element-ui/src/utils/scroll-into-view";
+import emitter from "element-ui/src/mixins/emitter";
 import {
   noop,
   coerceTruthyValueToArray,
@@ -91,6 +92,7 @@ export default {
   components: {
     CascaderMenu,
   },
+  mixins: [emitter],
 
   props: {
     value: {},
@@ -156,6 +158,7 @@ export default {
     checkedValue(val) {
       if (!isEqual(val, this.value)) {
         this.checkStrictly && this.calculateCheckedNodePaths();
+        this.broadcast("ElCascaderMenu", "updateInDeterminate");
         this.$emit("input", val);
         this.$emit("change", val);
       }
@@ -320,9 +323,9 @@ export default {
         const parent = node.root ? null : node;
         dataList && dataList.length && this.store.appendNodes(dataList, parent);
 
-        // add bu Murphy，初始展示懒加载的节点时，设置对应v-model 节点value值的节点状态
+        // add by Murphy，初始展示懒加载的节点时，设置对应v-model 节点value值的节点状态
         this.syncMultiCheckState();
-        // add bu Murphy，对应修改输入框展示文本
+        // add by Murphy，对应修改输入框展示文本
         this.$parent.computePresentContent();
 
         node.loading = false;
@@ -367,16 +370,53 @@ export default {
     },
     scrollIntoView() {
       if (this.$isServer) return;
-
       const menus = this.$refs.menu || [];
       menus.forEach((menu) => {
-        const menuElement = menu.$el;
-        if (menuElement) {
-          const container = menuElement.querySelector(".el-scrollbar__wrap");
-          const activeNode =
-            menuElement.querySelector(".el-cascader-node.is-active") ||
-            menuElement.querySelector(".el-cascader-node.in-active-path");
-          scrollIntoView(container, activeNode);
+        if (this.config.virtualScroll) {
+          let currentNodeIndex = -1;
+          menu.nodes.find((item, index) => {
+            let flag = item.inActivePath;
+            flag && (currentNodeIndex = index);
+            return flag;
+          });
+          if (currentNodeIndex !== -1) {
+            menu.$refs.virtualList &&
+              menu.$refs.virtualList.scrollToIndex(currentNodeIndex);
+          } else {
+            currentNodeIndex = -1;
+            menu.nodes.find((item, index) => {
+              let flag = false;
+              if (this.config.multiple) {
+                flag = item.checked || item.indeterminate;
+              } else {
+                // 如果是单选，得区分emitPath
+                // 因为emitPath为true时，this.checkValue是数组
+                // 为false时，是字符串
+                if (this.config.emitPath) {
+                  flag =
+                    Array.isArray(this.value) &&
+                    this.value.includes(item.value);
+                } else {
+                  flag = this.value === item.value;
+                }
+              }
+              flag && (currentNodeIndex = index);
+              return flag;
+            });
+
+            menu.$refs.virtualList && currentNodeIndex === -1
+              ? menu.$refs.virtualList.reset()
+              : menu.$refs.virtualList.scrollToIndex(currentNodeIndex);
+          }
+        } else {
+          const menuElement = menu.$el;
+          if (menuElement) {
+            const container = menuElement.querySelector(".el-scrollbar__wrap");
+            const activeNode =
+              menuElement.querySelector(".el-cascader-node.is-active") ||
+              menuElement.querySelector(".el-cascader-node.in-active-path");
+            scrollIntoView(container, activeNode);
+          }
         }
       });
     },

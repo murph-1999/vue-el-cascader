@@ -114,16 +114,15 @@
               <!-- <span>{{ item.text }}</span> -->
               <!-- add by Murphy, highlight text-->
               <highlight
-                v-if="!customSuggestion"
                 :inputValue="filterValue"
                 :text="item.text"
               ></highlight>
               <!-- add by Murphy, custom search node display -->
-              <slot
+              <!-- <slot
                 v-else
                 v-bind="{ node: item, inputValue: filterValue }"
                 name="search"
-              ></slot>
+              ></slot> -->
               <i v-if="item.checked" class="el-icon-check"></i>
             </li>
           </template>
@@ -240,7 +239,7 @@ export default {
     disabled: Boolean,
     clearable: Boolean,
     filterable: Boolean,
-    customSuggestion: Boolean, // add by Murphy, custom search node display
+    highlight: Boolean, // add by Murphy, whether highlighting is needed
     filterMethod: Function,
     separator: {
       type: String,
@@ -260,6 +259,11 @@ export default {
       default: () => () => {},
     },
     popperClass: String,
+    // add by Murphy，支持远程搜索
+    remote: {
+      type: Boolean,
+      default: false,
+    },
   },
 
   data() {
@@ -380,7 +384,10 @@ export default {
       this.$nextTick(() => {
         this.updatePopper();
         // add by Murphy, listen for panel scrolling
-        val && this.bindScrollbarListener();
+        const { pagination } = this.config;
+        if (val && pagination) {
+          val && this.bindScrollbarListener();
+        }
       });
     },
   },
@@ -403,7 +410,17 @@ export default {
         this.filtering = false;
         return;
       }
-
+      /**
+       * add by Murphy
+       * 1.远程搜索，将搜索结果中已加载节点不存在的，append到store中
+       * 2.调用getSuggestions并update popper
+       */
+      const { remoteMethod } = this.config;
+      if (this.remote && remoteMethod) {
+        this.suggestionLoading = true;
+        remoteMethod(inputValue, this.remoteSearchResolve(inputValue));
+        return;
+      }
       const before = this.beforeFilter(inputValue);
       if (before && before.then) {
         before.then(this.getSuggestions);
@@ -531,6 +548,8 @@ export default {
       this.$nextTick(() => {
         if (this.config.multiple) {
           this.computePresentTags();
+          // add by Murphy
+          if (this.remote && this.config.remoteMethod) return;
           this.presentText = this.presentTags.length ? " " : null;
         } else {
           this.computePresentText();
@@ -763,23 +782,35 @@ export default {
       if (this.$refs.suggestionPanel.override) {
         return;
       }
+
+      let scrollTimer = null;
+      const THRESHOLD = 10; // 设置10px的阈值
+      const DEBOUNCE_DELAY = 200; // 200ms的防抖延迟
+
       this.$refs.suggestionPanel.handleScroll = () => {
         const wrap = this.$refs.suggestionPanel.wrap;
         this.$refs.suggestionPanel.moveY =
           (wrap.scrollTop * 100) / wrap.clientHeight;
         this.$refs.suggestionPanel.moveX =
           (wrap.scrollLeft * 100) / wrap.clientWidth;
-        let poor = wrap.scrollHeight - wrap.clientHeight;
-        if (
-          poor == parseInt(wrap.scrollTop) ||
-          poor == Math.ceil(wrap.scrollTop) ||
-          poor == Math.floor(wrap.scrollTop)
-        ) {
-          this.$emit(
-            "suggestion-scroll-bottom",
-            this.inputValue,
-            this.remoteSearchResolve(this.inputValue)
-          );
+
+        // 计算到底部的距离
+        const scrollBottom =
+          wrap.scrollHeight - wrap.scrollTop - wrap.clientHeight;
+
+        if (scrollBottom <= THRESHOLD) {
+          // 清除之前的定时器
+          if (scrollTimer) {
+            clearTimeout(scrollTimer);
+          }
+          // 添加防抖
+          scrollTimer = setTimeout(() => {
+            this.$emit(
+              "suggestion-scroll-bottom",
+              this.inputValue,
+              this.remoteSearchResolve(this.inputValue)
+            );
+          }, DEBOUNCE_DELAY);
         }
       };
       this.$refs.suggestionPanel.override = true;

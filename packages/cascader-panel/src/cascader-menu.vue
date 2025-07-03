@@ -3,17 +3,21 @@ import ElScrollbar from "element-ui/packages/scrollbar";
 import CascaderNode from "./cascader-node.vue";
 import Locale from "element-ui/src/mixins/locale";
 import { generateId, isEmpty } from "element-ui/src/utils/util";
+import virtualListItem from "./cascader-virtual-scroll-item.vue";
+import VirtualList from "vue-virtual-scroll-list";
+import emitter from "element-ui/src/mixins/emitter";
 
 export default {
   name: "ElCascaderMenu",
 
-  mixins: [Locale],
+  mixins: [Locale, emitter],
 
   inject: ["panel"],
 
   components: {
     ElScrollbar,
     CascaderNode,
+    "virtual-list": VirtualList,
   },
 
   props: {
@@ -23,12 +27,22 @@ export default {
     },
     index: Number,
   },
-
+  watch: {
+    nodes() {
+      this.isCheckAll && this.updateInDeterminate();
+    },
+    menuId(val) {
+      this.virtualListProps.menuId = val;
+    },
+  },
   data() {
     return {
       activeNode: null,
       hoverTimer: null,
       id: generateId(),
+      virtualListProps: {},
+      checkAll: false,
+      isIndeterminate: false,
     };
   },
 
@@ -39,9 +53,52 @@ export default {
     menuId() {
       return `cascader-menu-${this.id}-${this.index}`;
     },
+    isCheckAll() {
+      let config = this.panel.config;
+      return (
+        config.checkAll &&
+        (config.checkStrictly || (!config.checkStrictly && this.index === 0))
+      );
+    },
   },
-
+  created() {
+    if (this.isCheckAll) {
+      this.updateInDeterminate();
+      this.$on("updateInDeterminate", this.updateInDeterminate);
+    }
+  },
   methods: {
+    updateInDeterminate() {
+      const { panel, nodes } = this;
+      if (panel.config.checkAll) {
+        let counter = 0;
+        let disabledCounter = 0;
+        let indeterminateCounter = 0;
+        for (let i = 0; i < nodes.length; i++) {
+          const node = nodes[i];
+          if (!node.isDisabled) {
+            node.checked && counter++;
+            node.indeterminate && indeterminateCounter++;
+          } else {
+            disabledCounter++;
+          }
+        }
+        this.checkAll =
+          counter === this.nodes.length - disabledCounter && counter > 0;
+        this.isIndeterminate = this.checkAll
+          ? false
+          : indeterminateCounter > 0 || counter > 0;
+      }
+    },
+    handleCheckAllChange() {
+      const { nodes, panel } = this;
+      this.checkAll = !this.checkAll;
+      for (let i = 0; i < nodes.length; i++) {
+        const node = nodes[i];
+        node.doCheck(this.checkAll, true);
+      }
+      panel.calculateMultiCheckedValue();
+    },
     handleExpand(e) {
       this.activeNode = e.target;
     },
@@ -85,15 +142,23 @@ export default {
       );
     },
     renderNodeList(h) {
-      const { menuId } = this;
-      const { isHoverMenu } = this.panel;
+      const {
+        menuId,
+        nodes,
+        checkAll,
+        isIndeterminate,
+        handleCheckAllChange,
+        isCheckAll,
+      } = this;
+      const { isHoverMenu, config } = this.panel;
       const events = { on: {} };
 
       if (isHoverMenu) {
         events.on.expand = this.handleExpand;
       }
 
-      const nodes = this.nodes.map((node, index) => {
+      this.virtualListProps.menuId = menuId;
+      const nodeItems = nodes.map((node, index) => {
         const { hasChildren } = node;
         return (
           <cascader-node
@@ -108,7 +173,29 @@ export default {
       });
 
       return [
-        ...nodes,
+        isCheckAll && (
+          <el-checkbox
+            class="checkall"
+            indeterminate={isIndeterminate}
+            value={checkAll}
+            onChange={handleCheckAllChange}
+          >
+            全选
+          </el-checkbox>
+        ),
+        config.virtualScroll ? (
+          <virtual-list
+            style={{ height: "200px", overflowY: "auto" }}
+            ref="virtualList"
+            class="el-cascader-menu__virtual-list"
+            data-key="uid"
+            data-sources={nodes}
+            extra-props={this.virtualListProps}
+            data-component={virtualListItem}
+          ></virtual-list>
+        ) : (
+          [...nodeItems]
+        ),
         isHoverMenu ? (
           <svg ref="hoverZone" class="el-cascader-menu__hover-zone"></svg>
         ) : null,
@@ -120,79 +207,91 @@ export default {
      */
     bindScrollbarListener() {
       this.$nextTick(() => {
-        if (this.$refs.scrollbar.override) {
+        const { config } = this.panel;
+        const refName = "scrollbar";
+        if (this.$refs[refName].override) {
           return;
         }
-        this.$refs.scrollbar.handleScroll = () => {
-          const wrap = this.$refs.scrollbar.wrap;
-          this.$refs.scrollbar.moveY =
+
+        let scrollTimer = null;
+        let isLoading = false; // 添加加载标志位
+        const THRESHOLD = 10; // 设置10px的阈值
+        const DEBOUNCE_DELAY = 300; // 200ms的防抖延迟
+
+        this.$refs[refName].handleScroll = () => {
+          const wrap = this.$refs[refName].wrap;
+          this.$refs[refName].moveY =
             (wrap.scrollTop * 100) / wrap.clientHeight;
-          this.$refs.scrollbar.moveX =
+          this.$refs[refName].moveX =
             (wrap.scrollLeft * 100) / wrap.clientWidth;
-          let poor = wrap.scrollHeight - wrap.clientHeight;
-          if (
-            poor == parseInt(wrap.scrollTop) ||
-            poor == Math.ceil(wrap.scrollTop) ||
-            poor == Math.floor(wrap.scrollTop)
-          ) {
-            let parentNode = this.nodes[0] && this.nodes[0].parent;
-            const resolve = (data) => {
-              debugger;
-              // 无数据
-              if (isEmpty(data)) return;
 
-              // append当前父节点中不存在的节点到menu中
-              let loadedVals,
-                toAppendData = [];
-              // 第一层节点
-              if (!parentNode) {
-                loadedVals = this.nodes.map((n) => n.getValue());
+          // 计算到底部的距离
+          const scrollBottom =
+            wrap.scrollHeight - wrap.scrollTop - wrap.clientHeight;
+
+          if (scrollBottom <= THRESHOLD && !isLoading) {
+            // 清除之前的定时器
+            if (scrollTimer) {
+              clearTimeout(scrollTimer);
+            }
+
+            // 添加防抖
+            scrollTimer = setTimeout(() => {
+              isLoading = true; // 开始加载，设置标志位
+              let parentNode = this.nodes[0] && this.nodes[0].parent;
+              const resolve = (data) => {
+                // 无数据
+                if (isEmpty(data)) {
+                  isLoading = false; // 重置加载状态
+                  return;
+                }
+
+                // append当前父节点中不存在的节点到menu中
+                let loadedVals,
+                  toAppendData = [];
+                // 第一层节点
+                if (!parentNode) {
+                  loadedVals = this.nodes.map((n) => n.getValue());
+                } else {
+                  loadedVals = parentNode.children.map((n) => n.getValue());
+                }
                 toAppendData = data.filter(
                   (d) => !loadedVals.includes(d[this.panel.config.value])
                 );
-              } else {
-                loadedVals = parentNode.children.map((n) => n.getValue());
-                toAppendData = data.filter(
-                  (d) => !loadedVals.includes(d[this.panel.config.value])
-                );
-              }
-
-              console.log("toAppendData", toAppendData);
-              if (toAppendData.length == 0) {
-                this.$nextTick(() => {
-                  this.$emit("menu-scroll-bottom", parentNode, resolve);
+                if (!toAppendData.length) {
+                  isLoading = false; // 重置加载状态
+                  return;
+                }
+                // 计算一次展示值
+                this.$parent.$parent.computePresentContent();
+                toAppendData.forEach((d) => {
+                  this.panel.store.appendNode(d, parentNode);
                 });
-                return;
-              }
-              // 计算一次展示值
-              this.$parent.$parent.computePresentContent();
-              toAppendData.forEach((d) => {
-                this.panel.store.appendNode(d, parentNode);
-              });
-              // 同步checkedValue到节点checked
-              // 这段有问题，阻塞了
-              // 其实是数据量的问题
-              this.panel.syncMultiCheckState();
-            };
-            // if (!parentNode) {
-            //   console.warn("level1触底");
-            //   return;
-            // }
-            this.$emit("menu-scroll-bottom", parentNode, resolve);
+                // 同步checkedValue到节点checked
+                this.panel.syncMultiCheckState();
+                // 加载完成，重置状态
+                isLoading = false;
+              };
+              this.$emit("menu-scroll-bottom", parentNode, resolve);
+            }, DEBOUNCE_DELAY);
           }
         };
-        this.$refs.scrollbar.override = true;
+        this.$refs[refName].override = true;
       });
     },
   },
 
   mounted() {
-    this.bindScrollbarListener();
+    const { config } = this.panel;
+    if (config.pagination) {
+      this.bindScrollbarListener();
+    }
   },
 
   render(h) {
     const { isEmpty, menuId } = this;
     const events = { nativeOn: {} };
+    const { config } = this.panel;
 
     // optimize hover to expand experience (#8010)
     if (this.panel.isHoverMenu) {
@@ -200,7 +299,11 @@ export default {
       // events.nativeOn.mouseleave = this.clearHoverZone;
     }
 
-    return (
+    return config.virtualScroll ? (
+      <div class="el-cascader-menu" style={{ position: "relative" }}>
+        {isEmpty ? this.renderEmptyText(h) : this.renderNodeList(h)}
+      </div>
+    ) : (
       <el-scrollbar
         ref="scrollbar"
         tag="ul"
